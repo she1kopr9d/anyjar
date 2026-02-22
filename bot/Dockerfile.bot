@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY .env.bot ./.env
+
+RUN useradd -m -u 1000 botuser && \
+    chown -R botuser:botuser /app
+USER botuser
+
+RUN python -c "import telegram; import requests; print('✅ Зависимости установлены')"
+
+CMD ["python", "-m", "src.bot"]
+

@@ -1,0 +1,43 @@
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+
+RUN apk add --no-cache \
+    git \
+    make \
+    gcc \
+    musl-dev \
+    curl
+
+RUN git clone https://github.com/anyproto/anytype-cli.git .
+RUN make build
+
+FROM alpine:latest
+
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    curl \
+    bash \
+    su-exec
+
+WORKDIR /root/
+
+COPY --from=builder /app/dist/anytype /usr/local/bin/anytype
+COPY scripts/ /scripts/
+RUN chmod +x /scripts/*.sh
+
+RUN addgroup -g 1000 -S anytype && \
+    adduser -u 1000 -S anytype -G anytype
+
+RUN mkdir -p /root/.anytype /root/.config/anytype && \
+    chown -R anytype:anytype /root
+
+RUN anytype version
+
+EXPOSE 31010 31011 31012
+
+USER anytype
+
+ENTRYPOINT ["/scripts/entrypoint.sh"]
+

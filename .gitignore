@@ -1,0 +1,5 @@
+.env
+backups/*
+bot/logs/*
+bot/cache/*
+venv/

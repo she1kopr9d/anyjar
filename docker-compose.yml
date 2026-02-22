@@ -1,0 +1,96 @@
+version: "3.8"
+
+name: anytype-tg-bot
+
+services:
+  # Сервер Anytype CLI
+  anytype-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.anytype
+    container_name: anytype-core
+    hostname: anytype-server
+    volumes:
+      - anytype-data:/root/.anytype
+      - anytype-config:/root/.config/anytype
+      - ./scripts:/scripts:ro
+    ports:
+      - "31012:31012"
+    environment:
+      - ANYTYPE_SERVER_MODE=production
+      - ANYTYPE_DISABLE_RATE_LIMIT=1
+      - ANYTYPE_LOG_LEVEL=info
+      - ANYTYPE_LISTEN_ADDRESS=0.0.0.0:31012
+      - ANYTYPE_GRPC_LISTEN_ADDRESS=0.0.0.0:31010
+      - ANYTYPE_GRPC_WEB_LISTEN_ADDRESS=0.0.0.0:31011
+    command: >
+      sh -c "
+        if [ ! -f /root/.anytype/account.json ]; then
+          echo '🔧 Первый запуск. Ждем 5 секунд для инициализации...'
+          sleep 5
+        fi
+        echo '🚀 Запускаем Anytype сервер...'
+        anytype serve --listen-address $$ANYTYPE_LISTEN_ADDRESS
+      "
+    restart: unless-stopped
+    networks:
+      - anytype-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:31012/api/v1/spaces"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  # Telegram бот на Python
+  tg-bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile.bot
+    container_name: anytype-tg-bot
+    depends_on:
+      anytype-server:
+        condition: service_healthy
+    environment:
+      - ANYTYPE_API_URL=http://anytype-server:31012/api/v1
+      - ANYTYPE_API_KEY=${ANYTYPE_API_KEY}
+      - ANYTYPE_SPACE_ID=${ANYTYPE_SPACE_ID}
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN}
+      - TG_BOT_WEBHOOK_URL=${TG_BOT_WEBHOOK_URL:-}
+      - TG_BOT_WEBHOOK_PORT=8080
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=gpt-4
+      - LOG_LEVEL=INFO
+      - BOT_MODE=polling
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
+    volumes:
+      - bot-logs:/app/logs
+      - bot-cache:/app/cache
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - anytype-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  anytype-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  anytype-data:
+    name: anytype-data-volume
+  anytype-config:
+    name: anytype-config-volume
+  bot-logs:
+    name: bot-logs-volume
+  bot-cache:
+    name: bot-cache-volume
+
